@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bengal Homeo Hall - Patient Manager</title>
+<style>
+body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f4f6f9; }
+header { background:#2c7be5; color:white; padding:18px; text-align:center; font-size:18px; font-weight:bold; }
+.container { max-width:1100px; margin:15px auto; background:white; padding:15px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1); }
+input, textarea, button { width:100%; padding:10px; margin-top:8px; margin-bottom:12px; border-radius:8px; border:1px solid #ccc; font-size:14px; }
+button { background:#2c7be5; color:white; border:none; cursor:pointer; font-weight:bold; }
+button:hover { background:#1a5fcc; }
+.flex { display:flex; gap:10px; flex-wrap:wrap; }
+.flex button { flex:1; }
+.hidden { display:none; }
+.table-wrapper { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; min-width:600px; }
+table, th, td { border:1px solid #ddd; }
+th, td { padding:10px; text-align:left; }
+th { background:#f0f2f5; }
+@media (max-width:768px) { header{font-size:16px;} .container{margin:10px; padding:12px;} }
+</style>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+<header>
+Dr. Md Jashijul Haque<br>
+Bengal Homeo Hall<br>
+Mobile: 01737159999
+</header>
+
+<div class="container" id="loginSection">
+<h2>Doctor Login</h2>
+<input type="password" id="password" placeholder="Enter Password">
+<button onclick="login()">Login</button>
+</div>
+
+<div class="container hidden" id="mainSection">
+<h2>Add / Select Patient</h2>
+<input type="text" id="patientName" placeholder="Patient Name">
+<input type="text" id="patientPhone" placeholder="Phone Number">
+<h3>Add Visit Details</h3>
+<input type="date" id="visitDate">
+<input type="text" id="disease" placeholder="Disease / Problem">
+<textarea id="medicine" placeholder="Medicines Given"></textarea>
+<button onclick="saveVisit()">Save Visit</button>
+<hr>
+<h2>Search Patient</h2>
+<input type="text" id="search" placeholder="Search by name or phone" onkeyup="renderPatients()">
+<div class="table-wrapper">
+<table>
+<thead><tr><th>Name</th><th>Phone</th><th>Total Visits</th><th>View</th><th>Delete</th></tr></thead>
+<tbody id="patientTable"></tbody>
+</table>
+</div>
+<div id="historySection" class="hidden">
+<h2>Patient History</h2>
+<div id="historyContent"></div>
+<button onclick="printHistory()">Print Prescription</button>
+</div>
+</div>
+
+<script>
+// ===== Firebase Config =====
+ const firebaseConfig = {
+    apiKey: "AIzaSyAwUP9A7a_v7gDXk3BYGvIWi4iTgMez5RE",
+    authDomain: "patients-history.firebaseapp.com",
+    projectId: "patients-history",
+    storageBucket: "patients-history.firebasestorage.app",
+    messagingSenderId: "953088518010",
+    appId: "1:953088518010:web:023212298b292e5dcd98c3"
+  };
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ===== Login =====
+const correctPassword = "1234";
+function login(){
+  const pass = document.getElementById("password").value;
+  if(pass===correctPassword){
+    document.getElementById("loginSection").classList.add("hidden");
+    document.getElementById("mainSection").classList.remove("hidden");
+    renderPatients();
+  }else alert("Wrong Password");
+}
+
+// ===== Save Visit =====
+function saveVisit(){
+  const name = document.getElementById("patientName").value;
+  const phone = document.getElementById("patientPhone").value;
+  const date = document.getElementById("visitDate").value;
+  const disease = document.getElementById("disease").value;
+  const medicine = document.getElementById("medicine").value;
+  if(!name||!phone){ alert("Name and phone required"); return; }
+
+  const patientRef = db.ref('patients/'+phone);
+  patientRef.once('value', snapshot => {
+    if(snapshot.exists()){
+      const visits = snapshot.val().visits || [];
+      visits.push({date,disease,medicine});
+      patientRef.update({name,phone,visits});
+    }else{
+      patientRef.set({name,phone,visits:[{date,disease,medicine}]});
+    }
+  });
+  alert("Visit Saved Successfully");
+  renderPatients();
+}
+
+// ===== Render Patients =====
+function renderPatients(){
+  const table = document.getElementById("patientTable");
+  const search = document.getElementById("search").value.toLowerCase();
+  table.innerHTML = "";
+
+  db.ref('patients').once('value', snapshot => {
+    snapshot.forEach(child => {
+      const p = child.val();
+      if(p.name.toLowerCase().includes(search) || p.phone.includes(search)){
+        table.innerHTML += `<tr>
+<td>${p.name}</td>
+<td>${p.phone}</td>
+<td>${p.visits.length}</td>
+<td><button onclick="viewHistory('${p.phone}')">View</button></td>
+<td><button onclick="deletePatient('${p.phone}')">Delete</button></td>
+</tr>`;
+      }
+    });
+  });
+}
+
+// ===== View History =====
+function viewHistory(phone){
+  db.ref('patients/'+phone).once('value', snapshot => {
+    if(!snapshot.exists()) return;
+    const p = snapshot.val();
+    const historyDiv = document.getElementById("historyContent");
+    historyDiv.innerHTML = `<h3>${p.name} (${p.phone})</h3>`;
+    p.visits.forEach(v=>{
+      historyDiv.innerHTML += `<p><strong>Date:</strong> ${v.date}<br><strong>Disease:</strong> ${v.disease}<br><strong>Medicine:</strong> ${v.medicine}</p><hr>`;
+    });
+    document.getElementById("historySection").classList.remove("hidden");
+  });
+}
+
+// ===== Delete Patient =====
+function deletePatient(phone){
+  if(confirm("Delete this patient completely?")){
+    db.ref('patients/'+phone).remove();
+    renderPatients();
+    document.getElementById("historySection").classList.add("hidden");
+  }
+}
+
+// ===== Print =====
+function printHistory(){
+  const content = document.getElementById("historyContent").innerHTML;
+  const win = window.open("","","width=800,height=600");
+  win.document.write(`<html><body>${content}</body></html>`);
+  win.document.close();
+  win.print();
+}
+</script>
+</body>
+</html>
